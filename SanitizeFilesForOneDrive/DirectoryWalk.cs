@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.IO;
 
@@ -8,23 +9,32 @@ namespace SanitizeFilesForOneDrive
     {
         static StringCollection log = new StringCollection();
         private DirectoryInfo _rootDir = null;
+        int _filesDeleted = 0, _filesRenamed = 0;
+        int _dirsDeleted = 0, _dirsRenamed = 0;
 
         public DirectoryWalk(string startDirectory)
         {
             if (startDirectory == string.Empty) _rootDir = new DirectoryInfo(Directory.GetCurrentDirectory());
             WalkDirectoryTree(_rootDir);
 
-            Console.WriteLine("Files with restricted access:");
-            foreach(string s in log)
+            if (log.Count > 0)
             {
-                Console.WriteLine(s);
+                Console.WriteLine("Files with restricted access:");
+                foreach (var s in log)
+                {
+                    Console.WriteLine(s);
+                }
             }
+
+            Console.WriteLine("\nFiles Renamed: " + _filesRenamed + "\tDirectories Renamed: " + _dirsRenamed);
+            Console.WriteLine("Files Deleted: " + _filesDeleted + "\tDirectories Deleted: " + _dirsDeleted + "\n");
         }
 
         void WalkDirectoryTree(DirectoryInfo root)
         {
             FileInfo[] files = null;
-            DirectoryInfo[] subDirs = null;
+            List<FileInfo> filesToDelete = new List<FileInfo>();
+            List<DirectoryInfo> dirsToDelete = new List<DirectoryInfo>();
 
             try
             {
@@ -43,17 +53,59 @@ namespace SanitizeFilesForOneDrive
 
             if (files != null)
             {
-                foreach (FileInfo fi in files)
+                var subDirs = root.GetDirectories("*", SearchOption.TopDirectoryOnly);
+                for (int i = 0; i < subDirs.Length; i++)
                 {
-                    //Add call to modify the file name
-                    File.Move(Path.Combine(root.FullName, fi.Name), Path.Combine(root.FullName, Sanitizer.FixFileName(fi.Name)));
+                    WalkDirectoryTree(subDirs[i]);
+                    if (Sanitizer.IsObsolete(subDirs[i].Name))
+                    {
+                        dirsToDelete.Add(subDirs[i]);
+                    }
+                    else
+                    {
+                        var newName = Sanitizer.FixFileName(subDirs[i].Name);
+                        if (newName != subDirs[i].Name)
+                        {
+                            try
+                            {
+                                Directory.Move(Path.Combine(root.FullName, subDirs[i].Name), Path.Combine(root.FullName, newName));
+                                _dirsRenamed++;
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine(e.Message);
+                            }
+                        }
+                    }
+                }
+                for(int i = 0; i < files.Length; i++)
+                {
+                    if (Sanitizer.IsObsolete(files[i].Name))
+                    {
+                        filesToDelete.Add(files[i]);
+                    }
+                    else
+                    {
+                        var newName = Sanitizer.FixFileName(files[i].Name);
+                        if (newName != files[i].Name)
+                        {
+                            try
+                            {
+                                File.Move(Path.Combine(root.FullName, files[i].Name), Path.Combine(root.FullName, newName));
+                                _filesRenamed++;
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine(e.Message);
+                            }
+                        }
+                    }
                 }
 
-                subDirs = root.GetDirectories();
-                foreach(DirectoryInfo dirInfo in subDirs)
-                {
-                    WalkDirectoryTree(dirInfo);
-                }
+                var delFiles = 0; var delDirs = 0;
+                Sanitizer.DeleteLists(dirsToDelete, filesToDelete, out delFiles, out delDirs);
+                _filesDeleted += delFiles;
+                _dirsDeleted += delDirs;
             }
         }
     }

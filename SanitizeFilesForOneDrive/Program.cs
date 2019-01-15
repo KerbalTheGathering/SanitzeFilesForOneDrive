@@ -13,7 +13,5 @@ namespace SanitizeFilesForOneDrive
             Console.WriteLine("Press any key");
             Console.ReadLine();
         }
-
     }
-
 }
